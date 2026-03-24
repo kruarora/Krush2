@@ -840,6 +840,7 @@
                 }
 
                 function openAdminModal(key, title, colName, type, isPending) {
+                    window.currentAdminModal = { key: key, title: title, colName: colName, type: type, isPending: isPending };
                     var docs = adminData[key] || [];
                     var expandBody = document.getElementById('expandModalBody');
                     var expandTitle = document.getElementById('expandModalTitle');
@@ -855,13 +856,19 @@
                     document.body.style.overflow = 'hidden';
                 }
 
+                function refreshAdminModalIfOpen(key) {
+                    if (window.currentAdminModal && window.currentAdminModal.key === key && document.getElementById('expandModal').classList.contains('open')) {
+                        openAdminModal(window.currentAdminModal.key, window.currentAdminModal.title, window.currentAdminModal.colName, window.currentAdminModal.type, window.currentAdminModal.isPending);
+                    }
+                }
+
                 // Photos: pending
                 onSnapshot(query(collection(db, 'photos'), where('approved', '==', false)), function (snap) {
                     var el = document.getElementById('adminPhotos');
                     document.getElementById('photoCount').textContent = snap.size + ' pending';
                     var pb = document.getElementById('tabPhotoBadge');
                     if (pb) { pb.textContent = snap.size; pb.style.display = snap.size > 0 ? 'inline-flex' : 'none'; }
-                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No pending photos</div>'; adminData.photosPending = []; return; }
+                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No pending photos</div>'; adminData.photosPending = []; refreshAdminModalIfOpen('photosPending'); return; }
                     var sorted = sortByTs(snap.docs, true);
                     adminData.photosPending = sorted;
                     el.innerHTML = '';
@@ -875,13 +882,14 @@
                         btn.onclick = function () { openAdminModal('photosPending', 'Pending Photos', 'photos', 'photo', true); };
                         el.appendChild(btn);
                     }
+                    refreshAdminModalIfOpen('photosPending');
                 });
 
                 // Photos: approved
                 onSnapshot(query(collection(db, 'photos'), where('approved', '==', true)), function (snap) {
                     var el = document.getElementById('adminPhotosApproved');
                     document.getElementById('photoApprovedCount').textContent = snap.size + ' approved';
-                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No approved photos yet</div>'; adminData.photosApproved = []; return; }
+                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No approved photos yet</div>'; adminData.photosApproved = []; refreshAdminModalIfOpen('photosApproved'); return; }
                     var sorted = sortByTs(snap.docs, true);
                     adminData.photosApproved = sorted;
                     el.innerHTML = '';
@@ -895,6 +903,7 @@
                         btn.onclick = function () { openAdminModal('photosApproved', 'Approved Photos', 'photos', 'photo', false); };
                         el.appendChild(btn);
                     }
+                    refreshAdminModalIfOpen('photosApproved');
                 });
 
                 // Songs: pending
@@ -903,7 +912,7 @@
                     document.getElementById('songCount').textContent = snap.size + ' pending';
                     var sb = document.getElementById('tabSongBadge');
                     if (sb) { sb.textContent = snap.size; sb.style.display = snap.size > 0 ? 'inline-flex' : 'none'; }
-                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No pending song requests</div>'; adminData.songsPending = []; return; }
+                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No pending song requests</div>'; adminData.songsPending = []; refreshAdminModalIfOpen('songsPending'); return; }
                     var sorted = sortByTs(snap.docs, false);
                     adminData.songsPending = sorted;
                     el.innerHTML = '';
@@ -917,13 +926,14 @@
                         btn.onclick = function () { openAdminModal('songsPending', 'Pending Songs', 'songs', 'song', true); };
                         el.appendChild(btn);
                     }
+                    refreshAdminModalIfOpen('songsPending');
                 });
 
                 // Songs: approved
                 onSnapshot(query(collection(db, 'songs'), where('approved', '==', true)), function (snap) {
                     var el = document.getElementById('adminSongsApproved');
                     document.getElementById('songApprovedCount').textContent = snap.size + ' approved';
-                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No approved songs yet</div>'; adminData.songsApproved = []; return; }
+                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No approved songs yet</div>'; adminData.songsApproved = []; refreshAdminModalIfOpen('songsApproved'); return; }
                     var sorted = sortByTs(snap.docs, false);
                     adminData.songsApproved = sorted;
                     el.innerHTML = '';
@@ -937,6 +947,7 @@
                         btn.onclick = function () { openAdminModal('songsApproved', 'Approved Songs', 'songs', 'song', false); };
                         el.appendChild(btn);
                     }
+                    refreshAdminModalIfOpen('songsApproved');
                 });
 
                 // Guestbook: pending
@@ -945,7 +956,7 @@
                     document.getElementById('gbCount').textContent = snap.size + ' pending';
                     var gb = document.getElementById('tabGbBadge');
                     if (gb) { gb.textContent = snap.size; gb.style.display = snap.size > 0 ? 'inline-flex' : 'none'; }
-                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No pending messages</div>'; adminData.gbPending = []; return; }
+                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No pending messages</div>'; adminData.gbPending = []; refreshAdminModalIfOpen('gbPending'); return; }
                     var sorted = sortByTs(snap.docs, false);
                     adminData.gbPending = sorted;
                     el.innerHTML = '';
@@ -959,13 +970,14 @@
                         btn.onclick = function () { openAdminModal('gbPending', 'Pending Messages', 'guestbook', 'gb', true); };
                         el.appendChild(btn);
                     }
+                    refreshAdminModalIfOpen('gbPending');
                 });
 
                 // Guestbook: approved
                 onSnapshot(query(collection(db, 'guestbook'), where('approved', '==', true)), function (snap) {
                     var el = document.getElementById('adminGbApproved');
                     document.getElementById('gbApprovedCount').textContent = snap.size + ' approved';
-                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No approved messages yet</div>'; adminData.gbApproved = []; return; }
+                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No approved messages yet</div>'; adminData.gbApproved = []; refreshAdminModalIfOpen('gbApproved'); return; }
                     var sorted = sortByTs(snap.docs, false);
                     adminData.gbApproved = sorted;
                     el.innerHTML = '';
@@ -979,6 +991,7 @@
                         btn.onclick = function () { openAdminModal('gbApproved', 'Approved Messages', 'guestbook', 'gb', false); };
                         el.appendChild(btn);
                     }
+                    refreshAdminModalIfOpen('gbApproved');
                 });
             
                 // Admin Gallery: list listener
@@ -987,7 +1000,7 @@
                     var countBadge = document.getElementById('adminGalleryCount');
                     if (countBadge) countBadge.textContent = snap.size + ' images';
                     if (!el) return;
-                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No gallery images yet</div>'; adminData.gallery = []; return; }
+                    if (snap.empty) { el.innerHTML = '<div class="admin-empty">No gallery images yet</div>'; adminData.gallery = []; refreshAdminModalIfOpen('gallery'); return; }
                     var sorted = snap.docs.slice().sort(function(a, b) {
                         var ta = a.data().ts ? a.data().ts.toMillis() : 0;
                         var tb = b.data().ts ? b.data().ts.toMillis() : 0;
@@ -1005,6 +1018,7 @@
                         btn.onclick = function () { openAdminModal('gallery', 'Gallery Images', 'adminGallery', 'gallery', false); };
                         el.appendChild(btn);
                     }
+                    refreshAdminModalIfOpen('gallery');
                 });
 
                 // Admin Gallery: upload logic
