@@ -78,9 +78,15 @@
                 var lightboxVid = document.getElementById('lightboxVid');
                 if (p.type === 'video') {
                     lightboxImg.style.display = 'none';
+                    lightboxVid.preload = 'none';
+                    if (p.thumbUrl) {
+                        lightboxVid.poster = p.thumbUrl;
+                    } else {
+                        lightboxVid.removeAttribute('poster');
+                        lightboxVid.preload = 'metadata';
+                    }
                     lightboxVid.src = p.url;
                     lightboxVid.style.display = 'block';
-                    lightboxVid.load();
                 } else {
                     lightboxVid.style.display = 'none';
                     lightboxVid.pause();
@@ -144,8 +150,8 @@
                     var data = d.data();
                     var name = data.name || '';
                     var type = data.type || 'image';
-                    photoList.push({ url: data.url, webUrl: data.webUrl, name: name, type: type });
-                    if (i < PHOTO_LIMIT) appendMediaThumb(data.url, data.webUrl, name, type, i);
+                    photoList.push({ url: data.url, webUrl: data.webUrl, thumbUrl: data.thumbUrl, name: name, type: type });
+                    if (i < PHOTO_LIMIT) appendMediaThumb(data.url, data.webUrl, data.thumbUrl, name, type, i);
                 });
                 if (allPhotosDocs.length > PHOTO_LIMIT) {
                     var btn = document.createElement('button');
@@ -156,16 +162,21 @@
                 }
             });
 
-            function appendMediaThumb(url, webUrl, name, type, idx) {
+            function appendMediaThumb(url, webUrl, thumbUrl, name, type, idx) {
                 var wrap = document.createElement('div');
                 wrap.className = 'photo-thumb-wrap';
                 if (type === 'video') {
                     var vid = document.createElement('video');
                     vid.className = 'photo-thumb';
                     vid.src = url + '#t=0.001';
+                    if (thumbUrl) {
+                        vid.poster = thumbUrl;
+                        vid.preload = 'none';
+                    } else {
+                        vid.preload = 'metadata';
+                    }
                     vid.muted = true;
                     vid.playsInline = true;
-                    vid.preload = 'metadata';
                     wrap.appendChild(vid);
                     var play = document.createElement('div');
                     play.className = 'video-play-overlay';
@@ -174,7 +185,7 @@
                 } else {
                     var img = document.createElement('img');
                     img.className = 'photo-thumb';
-                    img.src = webUrl || url;
+                    img.src = thumbUrl || webUrl || url;
                     img.alt = 'Wedding photo';
                     wrap.appendChild(img);
                 }
@@ -220,6 +231,39 @@
                 });
             }
 
+            function generateVideoThumbnail(file) {
+                return new Promise(function(resolve, reject) {
+                    var video = document.createElement('video');
+                    video.preload = 'metadata';
+                    video.muted = true;
+                    video.playsInline = true;
+                    var fileURL = URL.createObjectURL(file);
+                    video.src = fileURL;
+                    
+                    video.onloadeddata = function() {
+                        video.currentTime = 0.1; // Seek to first frame
+                    };
+                    
+                    video.onseeked = function() {
+                        var canvas = document.createElement('canvas');
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        var ctx = canvas.getContext('2d');
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        URL.revokeObjectURL(fileURL);
+                        
+                        canvas.toBlob(function(blob) {
+                            resolve(blob);
+                        }, 'image/webp', 0.8);
+                    };
+                    
+                    video.onerror = function() {
+                        URL.revokeObjectURL(fileURL);
+                        reject(new Error("Video load error"));
+                    };
+                });
+            }
+
             function uploadFiles(files) {
                 var arr = Array.from(files).filter(function (f) { return f.type.startsWith('image/') || f.type.startsWith('video/'); });
                 if (!arr.length) return;
@@ -239,10 +283,19 @@
                     
                     if (mediaType === 'video') {
                         var storageRef = ref(storage, 'videos/' + timestamp + '_' + file.name);
-                        uploadBytes(storageRef, file)
-                            .then(function (snapshot) { return getDownloadURL(snapshot.ref); })
-                            .then(function (url) {
-                                return addDoc(collection(db, 'photos'), { url: url, webUrl: url, name: submitterName, type: 'video', ts: serverTimestamp(), approved: false });
+                        var thumbRef = ref(storage, 'photos/Thumb_' + timestamp + '_' + file.name + '.webp');
+                        
+                        var videoUpload = uploadBytes(storageRef, file).then(function(snap) { return getDownloadURL(snap.ref); });
+                        var thumbUpload = generateVideoThumbnail(file)
+                            .then(function(blob) { return uploadBytes(thumbRef, blob); })
+                            .then(function(snap) { return getDownloadURL(snap.ref); })
+                            .catch(function(err) { console.error("Thumbnail error:", err); return null; }); // Fallback
+                            
+                        Promise.all([videoUpload, thumbUpload])
+                            .then(function(urls) {
+                                var url = urls[0];
+                                var thumbUrl = urls[1];
+                                return addDoc(collection(db, 'photos'), { url: url, webUrl: url, thumbUrl: thumbUrl, name: submitterName, type: 'video', ts: serverTimestamp(), approved: false });
                             })
                             .then(function () {
                                 done++;
@@ -255,9 +308,10 @@
                                 photoStatus.textContent = 'Upload failed — please try again.';
                             });
                     } else {
-                        // Image dual upload
+                        // Image triple upload
                         var originalRef = ref(storage, 'photos/Original_' + timestamp + '_' + file.name);
                         var webRef = ref(storage, 'photos/Web_' + timestamp + '_' + file.name + '.webp');
+                        var thumbRef = ref(storage, 'photos/Thumb_' + timestamp + '_' + file.name + '.webp');
                         
                         var originalUpload = uploadBytes(originalRef, file).then(function(snap) { return getDownloadURL(snap.ref); });
                         
@@ -265,11 +319,16 @@
                             .then(function(blob) { return uploadBytes(webRef, blob); })
                             .then(function(snap) { return getDownloadURL(snap.ref); });
                             
-                        Promise.all([originalUpload, compressedUpload])
+                        var thumbUpload = compressImage(file, 300)
+                            .then(function(blob) { return uploadBytes(thumbRef, blob); })
+                            .then(function(snap) { return getDownloadURL(snap.ref); });
+                            
+                        Promise.all([originalUpload, compressedUpload, thumbUpload])
                             .then(function(urls) {
                                 var originalUrl = urls[0];
                                 var webUrl = urls[1];
-                                return addDoc(collection(db, 'photos'), { url: originalUrl, webUrl: webUrl, name: submitterName, type: 'image', ts: serverTimestamp(), approved: false });
+                                var thumbUrl = urls[2];
+                                return addDoc(collection(db, 'photos'), { url: originalUrl, webUrl: webUrl, thumbUrl: thumbUrl, name: submitterName, type: 'image', ts: serverTimestamp(), approved: false });
                             })
                             .then(function () {
                                 done++;
@@ -629,14 +688,19 @@
                             var vid = document.createElement('video');
                             vid.className = 'admin-card-thumb';
                             vid.src = data.url + '#t=0.001';
+                            if (data.thumbUrl) {
+                                vid.poster = data.thumbUrl;
+                                vid.preload = 'none';
+                            } else {
+                                vid.preload = 'metadata';
+                            }
                             vid.muted = true;
                             vid.playsInline = true;
-                            vid.preload = 'metadata';
                             item.appendChild(vid);
                         } else {
                             var img = document.createElement('img');
                             img.className = 'admin-card-thumb';
-                            img.src = data.webUrl || data.url;
+                            img.src = data.thumbUrl || data.webUrl || data.url;
                             item.appendChild(img);
                         }
                         var info = document.createElement('div');
@@ -1128,9 +1192,14 @@
                             var vid = document.createElement('video');
                             vid.className = 'photo-thumb';
                             vid.src = p.url + '#t=0.001';
+                            if (p.thumbUrl) {
+                                vid.poster = p.thumbUrl;
+                                vid.preload = 'none';
+                            } else {
+                                vid.preload = 'metadata';
+                            }
                             vid.muted = true;
                             vid.playsInline = true;
-                            vid.preload = 'metadata';
                             wrap.appendChild(vid);
                             var play = document.createElement('div');
                             play.className = 'video-play-overlay';
@@ -1139,7 +1208,7 @@
                         } else {
                             var img = document.createElement('img');
                             img.className = 'photo-thumb';
-                            img.src = p.url;
+                            img.src = p.thumbUrl || p.webUrl || p.url;
                             img.alt = 'Wedding photo';
                             img.loading = 'lazy';
                             wrap.appendChild(img);
